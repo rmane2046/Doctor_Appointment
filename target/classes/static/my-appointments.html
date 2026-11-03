@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>My Appointments - DocBook</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="site-header"></div>
+
+  <main class="container">
+    <h1 class="page-title">My appointments</h1>
+    <p class="page-sub">Your upcoming and past visits.</p>
+
+    <div class="tabs" id="tabs">
+      <button class="tab active" data-filter="ALL">All</button>
+      <button class="tab" data-filter="BOOKED">Booked</button>
+      <button class="tab" data-filter="CONFIRMED">Confirmed</button>
+      <button class="tab" data-filter="COMPLETED">Completed</button>
+      <button class="tab" data-filter="CANCELLED">Cancelled</button>
+    </div>
+
+    <div id="list" class="appt-list"></div>
+    <p id="empty-msg" class="empty hidden">
+      No appointments here yet. <a href="index.html">Find a doctor</a>
+    </p>
+  </main>
+
+  <script src="js/api.js"></script>
+  <script>
+    var appointments = [];
+    var currentFilter = 'ALL';
+
+    async function load() {
+      try {
+        appointments = await api('/appointments/my');
+        render();
+      } catch (e) {
+        toast(e.message, 'error');
+      }
+    }
+
+    function render() {
+      const list = document.getElementById('list');
+      const visible = appointments.filter(function (a) {
+        return currentFilter === 'ALL' || a.status === currentFilter;
+      });
+
+      document.getElementById('empty-msg').classList.toggle('hidden', visible.length > 0);
+      list.innerHTML = visible.map(function (a) {
+        const canCancel = a.status === 'BOOKED' || a.status === 'CONFIRMED';
+        return '<div class="card appt">' +
+          '<div class="appt-main">' +
+            '<span class="appt-title">' + esc(a.doctorName) + ' <span class="badge-spec">' + esc(a.specialization) + '</span></span>' +
+            '<span class="appt-meta">' + formatDate(a.date) + ' at ' + formatTime(a.time) + '</span>' +
+            (a.reason ? '<span class="appt-meta">Reason: ' + esc(a.reason) + '</span>' : '') +
+          '</div>' +
+          '<div class="appt-actions">' +
+            '<span class="status status-' + esc(a.status) + '">' + esc(a.status) + '</span>' +
+            (canCancel ? '<button class="btn btn-sm btn-danger" data-cancel="' + a.id + '">Cancel</button>' : '') +
+          '</div>' +
+        '</div>';
+      }).join('');
+    }
+
+    function init() {
+      document.getElementById('tabs').addEventListener('click', function (e) {
+        const tab = e.target.closest('.tab');
+        if (!tab) return;
+        document.querySelectorAll('.tab').forEach(function (t) { t.classList.remove('active'); });
+        tab.classList.add('active');
+        currentFilter = tab.getAttribute('data-filter');
+        render();
+      });
+
+      document.getElementById('list').addEventListener('click', async function (e) {
+        const btn = e.target.closest('[data-cancel]');
+        if (!btn) return;
+        if (!confirm('Cancel this appointment?')) return;
+        try {
+          await api('/appointments/' + btn.getAttribute('data-cancel') + '/cancel', { method: 'PATCH' });
+          toast('Appointment cancelled');
+          load();
+        } catch (err) {
+          toast(err.message, 'error');
+        }
+      });
+
+      load();
+    }
+
+    if (requireRole(['PATIENT'])) {
+      renderHeader();
+      init();
+    }
+  </script>
+</body>
+</html>

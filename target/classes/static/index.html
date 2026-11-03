@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DocBook - Find a doctor and book an appointment</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="site-header"></div>
+
+  <section class="hero">
+    <h1>Book a doctor appointment online</h1>
+    <p>Choose a specialist, pick a free slot and you are done.</p>
+    <div class="search-bar">
+      <input type="text" id="search-name" placeholder="Search doctor by name">
+      <select id="spec-filter"><option value="">All specializations</option></select>
+    </div>
+  </section>
+
+  <main class="container">
+    <div id="doctor-grid" class="grid"></div>
+    <p id="empty-msg" class="empty hidden">No doctors found.</p>
+  </main>
+
+  <!-- Booking dialog -->
+  <div id="modal" class="modal-backdrop">
+    <div class="modal">
+      <h3 id="modal-title">Book appointment</h3>
+      <p id="modal-sub" class="muted" style="margin-bottom:16px"></p>
+
+      <div class="form-row">
+        <label for="appt-date">Choose a date</label>
+        <input type="date" id="appt-date">
+      </div>
+
+      <div class="form-row">
+        <label>Available time slots</label>
+        <div id="slots" class="slots"></div>
+      </div>
+
+      <div class="form-row">
+        <label for="appt-reason">Reason for visit (optional)</label>
+        <textarea id="appt-reason" rows="2" maxlength="400" placeholder="e.g. chest pain since two days"></textarea>
+      </div>
+
+      <div style="display:flex; gap:10px; justify-content:flex-end">
+        <button class="btn btn-outline" id="modal-cancel">Close</button>
+        <button class="btn" id="modal-confirm" disabled>Confirm booking</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/api.js"></script>
+  <script>
+    renderHeader();
+
+    var allDoctors = [];
+    var selectedDoctor = null;
+    var selectedTime = null;
+
+    var grid = document.getElementById('doctor-grid');
+    var emptyMsg = document.getElementById('empty-msg');
+    var specFilter = document.getElementById('spec-filter');
+    var searchName = document.getElementById('search-name');
+    var modal = document.getElementById('modal');
+    var dateInput = document.getElementById('appt-date');
+    var slotsBox = document.getElementById('slots');
+    var confirmBtn = document.getElementById('modal-confirm');
+
+    // ---------- load data ----------
+    async function loadSpecializations() {
+      try {
+        const specs = await api('/doctors/specializations');
+        specFilter.innerHTML = '<option value="">All specializations</option>' +
+          specs.map(function (s) { return '<option value="' + esc(s) + '">' + esc(s) + '</option>'; }).join('');
+      } catch (e) {
+        toast(e.message, 'error');
+      }
+    }
+
+    async function loadDoctors() {
+      try {
+        const query = specFilter.value ? '?specialization=' + encodeURIComponent(specFilter.value) : '';
+        allDoctors = await api('/doctors' + query);
+        renderDoctors();
+      } catch (e) {
+        toast(e.message, 'error');
+      }
+    }
+
+    // ---------- render ----------
+    function renderDoctors() {
+      const term = searchName.value.trim().toLowerCase();
+      const visible = allDoctors.filter(function (d) {
+        return d.fullName.toLowerCase().indexOf(term) !== -1;
+      });
+
+      emptyMsg.classList.toggle('hidden', visible.length > 0);
+      grid.innerHTML = visible.map(function (d) {
+        return '<div class="card doctor-card">' +
+          '<div class="doctor-top">' +
+            '<div class="avatar">' + esc(initials(d.fullName)) + '</div>' +
+            '<div><div class="doctor-name">' + esc(d.fullName) + '</div>' +
+            '<span class="badge-spec">' + esc(d.specialization) + '</span></div>' +
+          '</div>' +
+          '<div class="doctor-meta">' + esc(d.qualification || '') + ' &middot; ' + d.experienceYears + ' yrs experience</div>' +
+          '<div class="doctor-bio">' + esc(d.bio || '') + '</div>' +
+          '<div class="doctor-meta">Available ' + formatTime(d.availableFrom) + ' - ' + formatTime(d.availableTo) +
+            ' (' + d.slotMinutes + ' min slots)</div>' +
+          '<div class="doctor-footer">' +
+            '<span class="fee">&#8377;' + d.consultationFee + '</span>' +
+            '<button class="btn btn-sm" data-book="' + d.id + '">Book appointment</button>' +
+          '</div>' +
+        '</div>';
+      }).join('');
+    }
+
+    // ---------- booking dialog ----------
+    function openBooking(doctorId) {
+      const user = getUser();
+      if (!user || !getToken()) {
+        window.location.href = 'login.html?next=index.html';
+        return;
+      }
+      if (user.role !== 'PATIENT') {
+        toast('Only patients can book appointments. Log in with a patient account.', 'error');
+        return;
+      }
+
+      selectedDoctor = allDoctors.find(function (d) { return d.id === doctorId; });
+      selectedTime = null;
+      confirmBtn.disabled = true;
+
+      document.getElementById('modal-title').textContent = 'Book with ' + selectedDoctor.fullName;
+      document.getElementById('modal-sub').textContent =
+        selectedDoctor.specialization + ' · Fee ₹' + selectedDoctor.consultationFee;
+      document.getElementById('appt-reason').value = '';
+
+      dateInput.min = todayStr();
+      dateInput.value = todayStr();
+      modal.classList.add('open');
+      loadSlots();
+    }
+
+    function closeBooking() {
+      modal.classList.remove('open');
+    }
+
+    async function loadSlots() {
+      selectedTime = null;
+      confirmBtn.disabled = true;
+      if (!dateInput.value) {
+        slotsBox.innerHTML = '';
+        return;
+      }
+      slotsBox.innerHTML = '<span class="muted">Loading...</span>';
+      try {
+        const slots = await api('/doctors/' + selectedDoctor.id + '/slots?date=' + dateInput.value);
+        if (slots.length === 0) {
+          slotsBox.innerHTML = '<span class="muted">No slots on this day.</span>';
+          return;
+        }
+        slotsBox.innerHTML = slots.map(function (s) {
+          return '<button type="button" class="slot" data-time="' + esc(s.time) + '"' +
+            (s.available ? '' : ' disabled') + '>' + formatTime(s.time) + '</button>';
+        }).join('');
+      } catch (e) {
+        slotsBox.innerHTML = '';
+        toast(e.message, 'error');
+      }
+    }
+
+    async function confirmBooking() {
+      confirmBtn.disabled = true;
+      try {
+        await api('/appointments', {
+          method: 'POST',
+          body: {
+            doctorId: selectedDoctor.id,
+            date: dateInput.value,
+            time: selectedTime,
+            reason: document.getElementById('appt-reason').value.trim()
+          }
+        });
+        toast('Appointment booked!');
+        closeBooking();
+        setTimeout(function () { window.location.href = 'my-appointments.html'; }, 900);
+      } catch (e) {
+        toast(e.message, 'error');
+        loadSlots(); // refresh: the slot may have been taken meanwhile
+      }
+    }
+
+    // ---------- events ----------
+    specFilter.addEventListener('change', loadDoctors);
+    searchName.addEventListener('input', renderDoctors);
+    dateInput.addEventListener('change', loadSlots);
+    confirmBtn.addEventListener('click', confirmBooking);
+    document.getElementById('modal-cancel').addEventListener('click', closeBooking);
+    modal.addEventListener('click', function (e) { if (e.target === modal) closeBooking(); });
+
+    // event delegation: one listener for all "Book" buttons and all slot buttons
+    grid.addEventListener('click', function (e) {
+      const btn = e.target.closest('[data-book]');
+      if (btn) openBooking(Number(btn.getAttribute('data-book')));
+    });
+    slotsBox.addEventListener('click', function (e) {
+      const btn = e.target.closest('.slot');
+      if (!btn || btn.disabled) return;
+      slotsBox.querySelectorAll('.slot').forEach(function (b) { b.classList.remove('selected'); });
+      btn.classList.add('selected');
+      selectedTime = btn.getAttribute('data-time');
+      confirmBtn.disabled = false;
+    });
+
+    loadSpecializations();
+    loadDoctors();
+  </script>
+</body>
+</html>

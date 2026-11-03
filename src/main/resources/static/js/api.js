@@ -1,10 +1,3 @@
-/*
- * Shared helpers used by every page:
- *  - token / user storage (localStorage)
- *  - api(): fetch wrapper that adds the JWT header and turns errors into exceptions
- *  - renderHeader(): the navigation bar (changes with the logged-in role)
- *  - toast(), esc(), todayStr(), requireRole()
- */
 
 const TOKEN_KEY = 'docapp_token';
 const USER_KEY = 'docapp_user';
@@ -32,15 +25,11 @@ function logout() {
   window.location.href = 'login.html';
 }
 
-/**
- * Calls the backend. Example: api('/appointments', { method: 'POST', body: {...} })
- * Resolves with the parsed JSON, rejects with Error(message) when the server answers with an error.
- */
 async function api(path, options = {}) {
   const method = options.method || 'GET';
   const headers = { 'Content-Type': 'application/json' };
 
-  // the login / register calls must not send an old token
+
   const token = getToken();
   if (token && !path.startsWith('/auth/')) {
     headers['Authorization'] = 'Bearer ' + token;
@@ -63,7 +52,7 @@ async function api(path, options = {}) {
   }
 
   if (!response.ok) {
-    // token expired or invalid -> go back to login
+    
     if (response.status === 401 && token && !path.startsWith('/auth/')) {
       logout();
     }
@@ -73,7 +62,6 @@ async function api(path, options = {}) {
   return data;
 }
 
-/** Escapes text before putting it into innerHTML (prevents XSS). */
 function esc(value) {
   if (value === null || value === undefined) return '';
   return String(value)
@@ -84,7 +72,6 @@ function esc(value) {
     .replace(/'/g, '&#39;');
 }
 
-/** Today's date as yyyy-mm-dd in the browser's local time (used as min value for date inputs). */
 function todayStr() {
   const d = new Date();
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
@@ -123,7 +110,6 @@ function toast(message, type) {
   setTimeout(function () { el.remove(); }, 3200);
 }
 
-/** Redirects to the login page unless the logged-in user has one of the allowed roles. */
 function requireRole(allowedRoles) {
   const user = getUser();
   if (!user || !getToken() || allowedRoles.indexOf(user.role) === -1) {
@@ -133,14 +119,12 @@ function requireRole(allowedRoles) {
   return true;
 }
 
-/** Where each role lands after login. */
 function homeFor(user) {
   if (user.role === 'DOCTOR') return 'doctor.html';
   if (user.role === 'ADMIN') return 'admin.html';
   return 'index.html';
 }
 
-/** Builds the top navigation bar inside <div id="site-header"></div>. */
 function renderHeader() {
   const host = document.getElementById('site-header');
   if (!host) return;

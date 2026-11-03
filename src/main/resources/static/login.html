@@ -54,8 +54,6 @@
           }
         });
         saveAuth(data);
-
-        // ?next=index.html (set when a visitor clicked "Book" while logged out)
         const next = new URLSearchParams(window.location.search).get('next');
         const safeNext = next && /^[a-z\-]+\.html$/.test(next) ? next : null;
         window.location.href = (data.user.role === 'PATIENT' && safeNext) ? safeNext : homeFor(data.user);

@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Register - DocBook</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="site-header"></div>
+
+  <main class="container">
+    <div class="card auth-card">
+      <h2>Create your account</h2>
+      <p class="page-sub">Patient registration - it only takes a minute.</p>
+
+      <form id="register-form">
+        <div class="form-row">
+          <label for="fullName">Full name</label>
+          <input type="text" id="fullName" required>
+        </div>
+        <div class="form-row">
+          <label for="email">Email</label>
+          <input type="email" id="email" required autocomplete="username">
+        </div>
+        <div class="form-row">
+          <label for="phone">Phone (optional)</label>
+          <input type="tel" id="phone" pattern="[0-9]{10}" title="10 digit mobile number">
+        </div>
+        <div class="form-row">
+          <label for="password">Password (min 6 characters)</label>
+          <input type="password" id="password" required minlength="6" autocomplete="new-password">
+        </div>
+        <button class="btn btn-block" type="submit" id="submit-btn">Register</button>
+      </form>
+
+      <p style="margin-top:14px">Already have an account? <a href="login.html">Login</a></p>
+    </div>
+  </main>
+
+  <script src="js/api.js"></script>
+  <script>
+    renderHeader();
+
+    document.getElementById('register-form').addEventListener('submit', async function (e) {
+      e.preventDefault();
+      const button = document.getElementById('submit-btn');
+      button.disabled = true;
+      try {
+        const data = await api('/auth/register', {
+          method: 'POST',
+          body: {
+            fullName: document.getElementById('fullName').value,
+            email: document.getElementById('email').value,
+            phone: document.getElementById('phone').value,
+            password: document.getElementById('password').value
+          }
+        });
+        saveAuth(data);
+        toast('Account created!');
+        setTimeout(function () { window.location.href = 'index.html'; }, 700);
+      } catch (err) {
+        toast(err.message, 'error');
+        button.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

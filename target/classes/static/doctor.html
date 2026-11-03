@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Doctor Dashboard - DocBook</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="site-header"></div>
+
+  <main class="container">
+    <h1 class="page-title">Doctor dashboard</h1>
+    <p class="page-sub">Appointments booked with you.</p>
+
+    <div class="stats" id="stats"></div>
+
+    <div class="tabs" id="tabs">
+      <button class="tab active" data-filter="ALL">All</button>
+      <button class="tab" data-filter="BOOKED">Booked</button>
+      <button class="tab" data-filter="CONFIRMED">Confirmed</button>
+      <button class="tab" data-filter="COMPLETED">Completed</button>
+      <button class="tab" data-filter="CANCELLED">Cancelled</button>
+    </div>
+
+    <div id="list" class="appt-list"></div>
+    <p id="empty-msg" class="empty hidden">No appointments in this category.</p>
+  </main>
+
+  <script src="js/api.js"></script>
+  <script>
+    var appointments = [];
+    var currentFilter = 'ALL';
+
+    async function load() {
+      try {
+        appointments = await api('/appointments/doctor');
+        renderStats();
+        render();
+      } catch (e) {
+        toast(e.message, 'error');
+      }
+    }
+
+    function count(status) {
+      return appointments.filter(function (a) { return a.status === status; }).length;
+    }
+
+    function renderStats() {
+      document.getElementById('stats').innerHTML =
+        '<div class="card stat"><div class="num">' + appointments.length + '</div><div class="label">Total</div></div>' +
+        '<div class="card stat"><div class="num">' + count('BOOKED') + '</div><div class="label">Awaiting confirmation</div></div>' +
+        '<div class="card stat"><div class="num">' + count('CONFIRMED') + '</div><div class="label">Confirmed</div></div>' +
+        '<div class="card stat"><div class="num">' + count('COMPLETED') + '</div><div class="label">Completed</div></div>';
+    }
+
+    function render() {
+      const list = document.getElementById('list');
+      const visible = appointments.filter(function (a) {
+        return currentFilter === 'ALL' || a.status === currentFilter;
+      });
+
+      document.getElementById('empty-msg').classList.toggle('hidden', visible.length > 0);
+      list.innerHTML = visible.map(function (a) {
+        let actions = '';
+        if (a.status === 'BOOKED') {
+          actions += '<button class="btn btn-sm btn-success" data-status="CONFIRMED" data-id="' + a.id + '">Confirm</button>';
+        }
+        if (a.status === 'BOOKED' || a.status === 'CONFIRMED') {
+          actions += '<button class="btn btn-sm" data-status="COMPLETED" data-id="' + a.id + '">Mark completed</button>';
+          actions += '<button class="btn btn-sm btn-danger" data-cancel="' + a.id + '">Cancel</button>';
+        }
+        return '<div class="card appt">' +
+          '<div class="appt-main">' +
+            '<span class="appt-title">' + esc(a.patientName) + '</span>' +
+            '<span class="appt-meta">' + formatDate(a.date) + ' at ' + formatTime(a.time) +
+              (a.patientPhone ? ' &middot; ' + esc(a.patientPhone) : '') + '</span>' +
+            (a.reason ? '<span class="appt-meta">Reason: ' + esc(a.reason) + '</span>' : '') +
+          '</div>' +
+          '<div class="appt-actions">' +
+            '<span class="status status-' + esc(a.status) + '">' + esc(a.status) + '</span>' + actions +
+          '</div>' +
+        '</div>';
+      }).join('');
+    }
+
+    function init() {
+      document.getElementById('tabs').addEventListener('click', function (e) {
+        const tab = e.target.closest('.tab');
+        if (!tab) return;
+        document.querySelectorAll('.tab').forEach(function (t) { t.classList.remove('active'); });
+        tab.classList.add('active');
+        currentFilter = tab.getAttribute('data-filter');
+        render();
+      });
+
+      document.getElementById('list').addEventListener('click', async function (e) {
+        const statusBtn = e.target.closest('[data-status]');
+        const cancelBtn = e.target.closest('[data-cancel]');
+        try {
+          if (statusBtn) {
+            await api('/appointments/' + statusBtn.getAttribute('data-id') + '/status', {
+              method: 'PATCH',
+              body: { status: statusBtn.getAttribute('data-status') }
+            });
+            toast('Appointment updated');
+            load();
+          } else if (cancelBtn) {
+            if (!confirm('Cancel this appointment?')) return;
+            await api('/appointments/' + cancelBtn.getAttribute('data-cancel') + '/cancel', { method: 'PATCH' });
+            toast('Appointment cancelled');
+            load();
+          }
+        } catch (err) {
+          toast(err.message, 'error');
+        }
+      });
+
+      load();
+    }
+
+    // start the page (only for logged-in doctors)
+    if (requireRole(['DOCTOR'])) {
+      renderHeader();
+      init();
+    }
+  </script>
+</body>
+</html>

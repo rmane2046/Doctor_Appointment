@@ -90,7 +90,6 @@
       load();
     }
 
-    // start the page (only for logged-in patients)
     if (requireRole(['PATIENT'])) {
       renderHeader();
       init();
