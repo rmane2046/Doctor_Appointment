@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Panel - DocBook</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="site-header"></div>
+
+  <main class="container">
+    <h1 class="page-title">Admin panel</h1>
+    <p class="page-sub">Overview of the whole system.</p>
+
+    <div class="stats" id="stats"></div>
+
+    <div class="tabs" id="tabs">
+      <button class="tab active" data-tab="appointments">Appointments</button>
+      <button class="tab" data-tab="users">Users</button>
+      <button class="tab" data-tab="add-doctor">Add doctor</button>
+    </div>
+
+    <!-- Appointments tab -->
+    <section id="tab-appointments">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>#</th><th>Patient</th><th>Doctor</th><th>Date</th><th>Time</th><th>Status</th><th></th></tr>
+          </thead>
+          <tbody id="appt-rows"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Users tab -->
+    <section id="tab-users" class="hidden">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>#</th><th>Name</th><th>Email</th><th>Role</th></tr></thead>
+          <tbody id="user-rows"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Add doctor tab -->
+    <section id="tab-add-doctor" class="hidden">
+      <div class="card">
+        <form id="doctor-form">
+          <div class="form-grid">
+            <div class="form-row"><label for="d-name">Full name</label><input id="d-name" required placeholder="Dr. Meera Joshi"></div>
+            <div class="form-row"><label for="d-email">Email (login)</label><input id="d-email" type="email" required></div>
+            <div class="form-row"><label for="d-password">Password</label><input id="d-password" type="text" required minlength="6"></div>
+            <div class="form-row"><label for="d-phone">Phone</label><input id="d-phone"></div>
+            <div class="form-row"><label for="d-spec">Specialization</label><input id="d-spec" required placeholder="Cardiology"></div>
+            <div class="form-row"><label for="d-qual">Qualification</label><input id="d-qual" placeholder="MBBS, MD"></div>
+            <div class="form-row"><label for="d-exp">Experience (years)</label><input id="d-exp" type="number" min="0" value="5" required></div>
+            <div class="form-row"><label for="d-fee">Consultation fee (&#8377;)</label><input id="d-fee" type="number" min="0" value="500" required></div>
+            <div class="form-row"><label for="d-from">Available from</label><input id="d-from" type="time" value="09:00" required></div>
+            <div class="form-row"><label for="d-to">Available to</label><input id="d-to" type="time" value="17:00" required></div>
+            <div class="form-row"><label for="d-slot">Slot length (minutes)</label><input id="d-slot" type="number" min="10" step="5" value="30" required></div>
+          </div>
+          <div class="form-row"><label for="d-bio">Short bio</label><textarea id="d-bio" rows="2" maxlength="400"></textarea></div>
+          <button class="btn" type="submit" id="doctor-submit">Add doctor</button>
+        </form>
+      </div>
+    </section>
+  </main>
+
+  <script src="js/api.js"></script>
+  <script>
+    async function loadStats() {
+      const s = await api('/admin/stats');
+      document.getElementById('stats').innerHTML =
+        stat(s.patients, 'Patients') + stat(s.doctors, 'Doctors') + stat(s.totalAppointments, 'Appointments') +
+        stat(s.booked, 'Booked') + stat(s.confirmed, 'Confirmed') + stat(s.completed, 'Completed') + stat(s.cancelled, 'Cancelled');
+    }
+
+    function stat(value, label) {
+      return '<div class="card stat"><div class="num">' + value + '</div><div class="label">' + label + '</div></div>';
+    }
+
+    async function loadAppointments() {
+      const rows = await api('/admin/appointments');
+      document.getElementById('appt-rows').innerHTML = rows.length === 0
+        ? '<tr><td colspan="7" class="empty">No appointments yet.</td></tr>'
+        : rows.map(function (a) {
+            const canCancel = a.status === 'BOOKED' || a.status === 'CONFIRMED';
+            return '<tr>' +
+              '<td>' + a.id + '</td>' +
+              '<td>' + esc(a.patientName) + '</td>' +
+              '<td>' + esc(a.doctorName) + '<br><span class="muted">' + esc(a.specialization) + '</span></td>' +
+              '<td>' + formatDate(a.date) + '</td>' +
+              '<td>' + formatTime(a.time) + '</td>' +
+              '<td><span class="status status-' + esc(a.status) + '">' + esc(a.status) + '</span></td>' +
+              '<td>' + (canCancel ? '<button class="btn btn-sm btn-danger" data-cancel="' + a.id + '">Cancel</button>' : '') + '</td>' +
+            '</tr>';
+          }).join('');
+    }
+
+    async function loadUsers() {
+      const rows = await api('/admin/users');
+      document.getElementById('user-rows').innerHTML = rows.map(function (u) {
+        return '<tr><td>' + u.id + '</td><td>' + esc(u.fullName) + '</td><td>' + esc(u.email) + '</td><td>' + esc(u.role) + '</td></tr>';
+      }).join('');
+    }
+
+    async function refreshAll() {
+      try {
+        await Promise.all([loadStats(), loadAppointments(), loadUsers()]);
+      } catch (e) {
+        toast(e.message, 'error');
+      }
+    }
+
+    function init() {
+      document.getElementById('tabs').addEventListener('click', function (e) {
+        const tab = e.target.closest('.tab');
+        if (!tab) return;
+        document.querySelectorAll('.tab').forEach(function (t) { t.classList.remove('active'); });
+        tab.classList.add('active');
+        ['appointments', 'users', 'add-doctor'].forEach(function (name) {
+          document.getElementById('tab-' + name).classList.toggle('hidden', name !== tab.getAttribute('data-tab'));
+        });
+      });
+
+      document.getElementById('appt-rows').addEventListener('click', async function (e) {
+        const btn = e.target.closest('[data-cancel]');
+        if (!btn || !confirm('Cancel this appointment?')) return;
+        try {
+          await api('/appointments/' + btn.getAttribute('data-cancel') + '/cancel', { method: 'PATCH' });
+          toast('Appointment cancelled');
+          refreshAll();
+        } catch (err) {
+          toast(err.message, 'error');
+        }
+      });
+
+      document.getElementById('doctor-form').addEventListener('submit', async function (e) {
+        e.preventDefault();
+        const button = document.getElementById('doctor-submit');
+        button.disabled = true;
+        try {
+          await api('/admin/doctors', {
+            method: 'POST',
+            body: {
+              fullName: document.getElementById('d-name').value,
+              email: document.getElementById('d-email').value,
+              password: document.getElementById('d-password').value,
+              phone: document.getElementById('d-phone').value,
+              specialization: document.getElementById('d-spec').value,
+              qualification: document.getElementById('d-qual').value,
+              experienceYears: Number(document.getElementById('d-exp').value),
+              consultationFee: Number(document.getElementById('d-fee').value),
+              bio: document.getElementById('d-bio').value,
+              availableFrom: document.getElementById('d-from').value,
+              availableTo: document.getElementById('d-to').value,
+              slotMinutes: Number(document.getElementById('d-slot').value)
+            }
+          });
+          toast('Doctor added');
+          document.getElementById('doctor-form').reset();
+          refreshAll();
+        } catch (err) {
+          toast(err.message, 'error');
+        }
+        button.disabled = false;
+      });
+
+      refreshAll();
+    }
+
+    // start the page (only for the admin)
+    if (requireRole(['ADMIN'])) {
+      renderHeader();
+      init();
+    }
+  </script>
+</body>
+</html>
